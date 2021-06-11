@@ -1,3 +1,4 @@
 # glapp
 
-Fiddling with Go/OpenGL
+Template project for fiddling with Go/OpenGL.
+
