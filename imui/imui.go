@@ -46,6 +46,7 @@ func NewIMUI(window *sdl.Window, font *imgui.FontAtlas) *IMUI {
 	}
 	ui.imguiIO = imgui.CurrentIO()
 	ui.imguiIO.SetClipboard(ui)
+	ui.imguiIO.SetIniFilename("")
 
 	ui.setKeyMapping()
 	ui.createDeviceObjects()
