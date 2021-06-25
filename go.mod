@@ -1,4 +1,4 @@
-module github.com/jack-ji/glapp
+module glapp
 
 go 1.16
 

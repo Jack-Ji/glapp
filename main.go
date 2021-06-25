@@ -6,11 +6,12 @@ import (
 	"log"
 	"runtime"
 
+	"glapp/imui"
+	"glapp/imui/demo"
+
 	"github.com/go-gl/gl/v4.6-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/inkyblackness/imgui-go/v4"
-	"github.com/jack-ji/glapp/imui"
-	"github.com/jack-ji/glapp/imui/demo"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
