@@ -2,60 +2,47 @@ package main
 
 import (
 	"fmt"
-	"image"
-	"image/draw"
 	_ "image/png"
 	"log"
-	"os"
 	"runtime"
-	"strings"
 
-	"github.com/go-gl/gl/v3.3-core/gl"
-	"github.com/go-gl/glfw/v3.3/glfw"
+	"github.com/go-gl/gl/v4.6-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/inkyblackness/imgui-go/v4"
 	"github.com/jack-ji/glapp/imui"
 	"github.com/jack-ji/glapp/imui/demo"
+	"github.com/veandco/go-sdl2/sdl"
 )
 
-const windowWidth = 1280
-const windowHeight = 800
-
 func init() {
-	// GLFW event handling must run on the main OS thread
+	// GUI event handling must run on the main OS thread
 	runtime.LockOSThread()
 }
 
 func main() {
-	if err := glfw.Init(); err != nil {
-		log.Fatalln("failed to initialize glfw:", err)
-	}
-	defer glfw.Terminate()
+	const (
+		windowWidth  = 1280
+		windowHeight = 800
+		majorVersion = 4
+		minorVersion = 6
+	)
 
-	glfw.WindowHint(glfw.Resizable, glfw.False)
-	glfw.WindowHint(glfw.ContextVersionMajor, 3)
-	glfw.WindowHint(glfw.ContextVersionMinor, 3)
-	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	window, err := glfw.CreateWindow(windowWidth, windowHeight, "Cube", nil, nil)
+	window, err := initOpenglContext(
+		"glapp",
+		[]int{windowWidth, windowHeight},
+		[]int{majorVersion, minorVersion})
 	if err != nil {
-		panic(err)
-	}
-	window.MakeContextCurrent()
-
-	// Initialize Glow
-	if err := gl.Init(); err != nil {
-		panic(err)
+		log.Fatal("Initialize OpenGL context failed:", err)
 	}
 
 	version := gl.GoStr(gl.GetString(gl.VERSION))
-	fmt.Println("OpenGL version", version)
+	log.Printf("OpenGL Version: %s", version)
 
 	// Configure the vertex and fragment shaders
-	program, err := newProgram(vertexShader, fragmentShader)
+	program, err := loadShader(vertexShader, fragmentShader)
 	if err != nil {
 		panic(err)
 	}
-
 	gl.UseProgram(program)
 
 	projection := mgl32.Perspective(mgl32.DegToRad(45.0), float32(windowWidth)/windowHeight, 0.1, 10.0)
@@ -76,7 +63,7 @@ func main() {
 	gl.BindFragDataLocation(program, 0, gl.Str("outputColor\x00"))
 
 	// Load the texture
-	texture, err := newTexture("square.png")
+	texture, err := loadTexture("square.png")
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -104,27 +91,40 @@ func main() {
 	gl.DepthFunc(gl.LESS)
 	gl.ClearColor(1.0, 1.0, 1.0, 1.0)
 
-	angle := 0.0
-	previousTime := glfw.GetTime()
+	var (
+		ui                = imui.NewIMUI(window, nil)
+		previousTime      = sdl.GetTicks()
+		running           = true
+		angle             = 0.0
+		showDemoWindow    = false
+		showGoDemoWindow  = false
+		clearColor        = [3]float32{0.0, 0.0, 0.0}
+		f                 = float32(0)
+		counter           = 0
+		showAnotherWindow = false
+	)
 
-	ui, _ := imui.NewIMUI(window, nil)
-	showDemoWindow := false
-	showGoDemoWindow := false
-	clearColor := [3]float32{0.0, 0.0, 0.0}
-	f := float32(0)
-	counter := 0
-	showAnotherWindow := false
+	for running {
+	EVENT_LOOP:
+		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
+			ui.ProcessEvent(event)
 
-	for !window.ShouldClose() {
+			switch event.(type) {
+			case *sdl.QuitEvent:
+				log.Printf("Quit")
+				running = false
+				break EVENT_LOOP
+			}
+		}
+
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
 		// 3d scene
 		{
-			time := glfw.GetTime()
+			time := sdl.GetTicks()
 			elapsed := time - previousTime
 			previousTime = time
-
-			angle += elapsed
+			angle += float64(elapsed) / 1000
 			model = mgl32.HomogRotate3D(float32(angle), mgl32.Vec3{0, 1, 0})
 
 			// Render
@@ -193,109 +193,12 @@ func main() {
 		}
 
 		// Maintenance
-		window.SwapBuffers()
-		glfw.PollEvents()
+		window.GLSwap()
 	}
-}
-
-func newProgram(vertexShaderSource, fragmentShaderSource string) (uint32, error) {
-	vertexShader, err := compileShader(vertexShaderSource, gl.VERTEX_SHADER)
-	if err != nil {
-		return 0, err
-	}
-
-	fragmentShader, err := compileShader(fragmentShaderSource, gl.FRAGMENT_SHADER)
-	if err != nil {
-		return 0, err
-	}
-
-	program := gl.CreateProgram()
-
-	gl.AttachShader(program, vertexShader)
-	gl.AttachShader(program, fragmentShader)
-	gl.LinkProgram(program)
-
-	var status int32
-	gl.GetProgramiv(program, gl.LINK_STATUS, &status)
-	if status == gl.FALSE {
-		var logLength int32
-		gl.GetProgramiv(program, gl.INFO_LOG_LENGTH, &logLength)
-
-		log := strings.Repeat("\x00", int(logLength+1))
-		gl.GetProgramInfoLog(program, logLength, nil, gl.Str(log))
-
-		return 0, fmt.Errorf("failed to link program: %v", log)
-	}
-
-	gl.DeleteShader(vertexShader)
-	gl.DeleteShader(fragmentShader)
-
-	return program, nil
-}
-
-func compileShader(source string, shaderType uint32) (uint32, error) {
-	shader := gl.CreateShader(shaderType)
-
-	csources, free := gl.Strs(source)
-	gl.ShaderSource(shader, 1, csources, nil)
-	free()
-	gl.CompileShader(shader)
-
-	var status int32
-	gl.GetShaderiv(shader, gl.COMPILE_STATUS, &status)
-	if status == gl.FALSE {
-		var logLength int32
-		gl.GetShaderiv(shader, gl.INFO_LOG_LENGTH, &logLength)
-
-		log := strings.Repeat("\x00", int(logLength+1))
-		gl.GetShaderInfoLog(shader, logLength, nil, gl.Str(log))
-
-		return 0, fmt.Errorf("failed to compile %v: %v", source, log)
-	}
-
-	return shader, nil
-}
-
-func newTexture(file string) (uint32, error) {
-	imgFile, err := os.Open(file)
-	if err != nil {
-		return 0, fmt.Errorf("texture %q not found on disk: %v", file, err)
-	}
-	img, _, err := image.Decode(imgFile)
-	if err != nil {
-		return 0, err
-	}
-
-	rgba := image.NewRGBA(img.Bounds())
-	if rgba.Stride != rgba.Rect.Size().X*4 {
-		return 0, fmt.Errorf("unsupported stride")
-	}
-	draw.Draw(rgba, rgba.Bounds(), img, image.Point{0, 0}, draw.Src)
-
-	var texture uint32
-	gl.GenTextures(1, &texture)
-	gl.ActiveTexture(gl.TEXTURE0)
-	gl.BindTexture(gl.TEXTURE_2D, texture)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-	gl.TexImage2D(
-		gl.TEXTURE_2D,
-		0,
-		gl.RGBA,
-		int32(rgba.Rect.Size().X),
-		int32(rgba.Rect.Size().Y),
-		0,
-		gl.RGBA,
-		gl.UNSIGNED_BYTE,
-		gl.Ptr(rgba.Pix))
-
-	return texture, nil
 }
 
 var vertexShader = `
-#version 330
+#version 460 core
 uniform mat4 projection;
 uniform mat4 camera;
 uniform mat4 model;
@@ -309,7 +212,7 @@ void main() {
 ` + "\x00"
 
 var fragmentShader = `
-#version 330
+#version 460 core
 uniform sampler2D tex;
 in vec2 fragTexCoord;
 out vec4 outputColor;

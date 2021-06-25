@@ -2,11 +2,10 @@ package imui
 
 import (
 	_ "embed"
-	"math"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
-	"github.com/go-gl/glfw/v3.3/glfw"
 	"github.com/inkyblackness/imgui-go/v4"
+	"github.com/veandco/go-sdl2/sdl"
 )
 
 //go:embed gl-shader/main.vert
@@ -15,15 +14,14 @@ var unversionedVertexShader string
 //go:embed gl-shader/main.frag
 var unversionedFragmentShader string
 
-// IMUI implements a ui based on glfw/imgui
+// IMUI implements a ui based on sdl/imgui
 type IMUI struct {
 	context *imgui.Context
 	imguiIO imgui.IO
 
-	window *glfw.Window
-
-	time             float64
-	mouseJustPressed [3]bool
+	window      *sdl.Window
+	time        uint64
+	buttonsDown [mouseButtonCount]bool
 
 	glslVersion            string
 	fontTexture            uint32
@@ -40,7 +38,7 @@ type IMUI struct {
 }
 
 // NewIMUI attempts to initialize a IMUI context.
-func NewIMUI(window *glfw.Window, font *imgui.FontAtlas) (*IMUI, error) {
+func NewIMUI(window *sdl.Window, font *imgui.FontAtlas) *IMUI {
 	ui := &IMUI{
 		context:     imgui.CreateContext(font),
 		window:      window,
@@ -50,125 +48,8 @@ func NewIMUI(window *glfw.Window, font *imgui.FontAtlas) (*IMUI, error) {
 	ui.imguiIO.SetClipboard(ui)
 
 	ui.setKeyMapping()
-	ui.installCallbacks()
 	ui.createDeviceObjects()
-
-	return ui, nil
-}
-
-// NewFrame marks the begin of a render pass. It forwards all current state to imgui IO.
-func (ui *IMUI) NewFrame() {
-	// Setup display size (every frame to accommodate for window resizing)
-	w, h := ui.window.GetSize()
-	ui.imguiIO.SetDisplaySize(imgui.Vec2{X: float32(w), Y: float32(h)})
-
-	// Setup time step
-	currentTime := glfw.GetTime()
-	if ui.time > 0 {
-		ui.imguiIO.SetDeltaTime(float32(currentTime - ui.time))
-	}
-	ui.time = currentTime
-
-	// Setup inputs
-	if ui.window.GetAttrib(glfw.Focused) != 0 {
-		x, y := ui.window.GetCursorPos()
-		ui.imguiIO.SetMousePosition(imgui.Vec2{X: float32(x), Y: float32(y)})
-	} else {
-		ui.imguiIO.SetMousePosition(imgui.Vec2{X: -math.MaxFloat32, Y: -math.MaxFloat32})
-	}
-
-	for i := 0; i < len(ui.mouseJustPressed); i++ {
-		down := ui.mouseJustPressed[i] || (ui.window.GetMouseButton(glfwButtonIDByIndex[i]) == glfw.Press)
-		ui.imguiIO.SetMouseButtonDown(i, down)
-		ui.mouseJustPressed[i] = false
-	}
-
-	imgui.NewFrame()
-}
-
-func (ui *IMUI) setKeyMapping() {
-	// Keyboard mapping. ImGui will use those indices to peek into the io.KeysDown[] array.
-	ui.imguiIO.KeyMap(imgui.KeyTab, int(glfw.KeyTab))
-	ui.imguiIO.KeyMap(imgui.KeyLeftArrow, int(glfw.KeyLeft))
-	ui.imguiIO.KeyMap(imgui.KeyRightArrow, int(glfw.KeyRight))
-	ui.imguiIO.KeyMap(imgui.KeyUpArrow, int(glfw.KeyUp))
-	ui.imguiIO.KeyMap(imgui.KeyDownArrow, int(glfw.KeyDown))
-	ui.imguiIO.KeyMap(imgui.KeyPageUp, int(glfw.KeyPageUp))
-	ui.imguiIO.KeyMap(imgui.KeyPageDown, int(glfw.KeyPageDown))
-	ui.imguiIO.KeyMap(imgui.KeyHome, int(glfw.KeyHome))
-	ui.imguiIO.KeyMap(imgui.KeyEnd, int(glfw.KeyEnd))
-	ui.imguiIO.KeyMap(imgui.KeyInsert, int(glfw.KeyInsert))
-	ui.imguiIO.KeyMap(imgui.KeyDelete, int(glfw.KeyDelete))
-	ui.imguiIO.KeyMap(imgui.KeyBackspace, int(glfw.KeyBackspace))
-	ui.imguiIO.KeyMap(imgui.KeySpace, int(glfw.KeySpace))
-	ui.imguiIO.KeyMap(imgui.KeyEnter, int(glfw.KeyEnter))
-	ui.imguiIO.KeyMap(imgui.KeyEscape, int(glfw.KeyEscape))
-	ui.imguiIO.KeyMap(imgui.KeyA, int(glfw.KeyA))
-	ui.imguiIO.KeyMap(imgui.KeyC, int(glfw.KeyC))
-	ui.imguiIO.KeyMap(imgui.KeyV, int(glfw.KeyV))
-	ui.imguiIO.KeyMap(imgui.KeyX, int(glfw.KeyX))
-	ui.imguiIO.KeyMap(imgui.KeyY, int(glfw.KeyY))
-	ui.imguiIO.KeyMap(imgui.KeyZ, int(glfw.KeyZ))
-}
-
-func (ui *IMUI) installCallbacks() {
-	ui.window.SetMouseButtonCallback(ui.mouseButtonChange)
-	ui.window.SetScrollCallback(ui.mouseScrollChange)
-	ui.window.SetKeyCallback(ui.keyChange)
-	ui.window.SetCharCallback(ui.charChange)
-}
-
-var glfwButtonIndexByID = map[glfw.MouseButton]int{
-	glfw.MouseButton1: mouseButtonPrimary,
-	glfw.MouseButton2: mouseButtonSecondary,
-	glfw.MouseButton3: mouseButtonTertiary,
-}
-
-var glfwButtonIDByIndex = map[int]glfw.MouseButton{
-	mouseButtonPrimary:   glfw.MouseButton1,
-	mouseButtonSecondary: glfw.MouseButton2,
-	mouseButtonTertiary:  glfw.MouseButton3,
-}
-
-func (ui *IMUI) mouseButtonChange(window *glfw.Window, rawButton glfw.MouseButton, action glfw.Action, mods glfw.ModifierKey) {
-	buttonIndex, known := glfwButtonIndexByID[rawButton]
-
-	if known && (action == glfw.Press) {
-		ui.mouseJustPressed[buttonIndex] = true
-	}
-}
-
-func (ui *IMUI) mouseScrollChange(window *glfw.Window, x, y float64) {
-	ui.imguiIO.AddMouseWheelDelta(float32(x), float32(y))
-}
-
-func (ui *IMUI) keyChange(window *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
-	if action == glfw.Press {
-		ui.imguiIO.KeyPress(int(key))
-	}
-	if action == glfw.Release {
-		ui.imguiIO.KeyRelease(int(key))
-	}
-
-	// Modifiers are not reliable across systems
-	ui.imguiIO.KeyCtrl(int(glfw.KeyLeftControl), int(glfw.KeyRightControl))
-	ui.imguiIO.KeyShift(int(glfw.KeyLeftShift), int(glfw.KeyRightShift))
-	ui.imguiIO.KeyAlt(int(glfw.KeyLeftAlt), int(glfw.KeyRightAlt))
-	ui.imguiIO.KeySuper(int(glfw.KeyLeftSuper), int(glfw.KeyRightSuper))
-}
-
-func (ui *IMUI) charChange(window *glfw.Window, char rune) {
-	ui.imguiIO.AddInputCharacters(string(char))
-}
-
-// Text returns the current clipboard text, if available.
-func (ui *IMUI) Text() (string, error) {
-	return ui.window.GetClipboardString(), nil
-}
-
-// SetText sets the text as the current clipboard text.
-func (ui *IMUI) SetText(text string) {
-	ui.window.SetClipboardString(text)
+	return ui
 }
 
 // Dispose cleans up the resources.
@@ -176,11 +57,136 @@ func (ui *IMUI) Dispose() {
 	ui.invalidateDeviceObjects()
 }
 
+// NewFrame marks the begin of a render pass. It forwards all current state to imgui.CurrentIO().
+func (ui *IMUI) NewFrame() {
+	// Setup display size (every frame to accommodate for window resizing)
+	displayWidth, displayHeight := ui.window.GetSize()
+	ui.imguiIO.SetDisplaySize(imgui.Vec2{X: float32(displayWidth), Y: float32(displayHeight)})
+
+	// Setup time step (we don't use SDL_GetTicks() because it is using millisecond resolution)
+	frequency := sdl.GetPerformanceFrequency()
+	currentTime := sdl.GetPerformanceCounter()
+	if ui.time > 0 {
+		ui.imguiIO.SetDeltaTime(float32(currentTime-ui.time) / float32(frequency))
+	} else {
+		const fallbackDelta = 1.0 / 60.0
+		ui.imguiIO.SetDeltaTime(fallbackDelta)
+	}
+	ui.time = currentTime
+
+	// If a mouse press event came, always pass it as "mouse held this frame", so we don't miss click-release events that are shorter than 1 frame.
+	x, y, state := sdl.GetMouseState()
+	ui.imguiIO.SetMousePosition(imgui.Vec2{X: float32(x), Y: float32(y)})
+	for i, button := range []uint32{sdl.BUTTON_LEFT, sdl.BUTTON_RIGHT, sdl.BUTTON_MIDDLE} {
+		ui.imguiIO.SetMouseButtonDown(i, ui.buttonsDown[i] || (state&sdl.Button(button)) != 0)
+		ui.buttonsDown[i] = false
+	}
+
+	imgui.NewFrame()
+}
+
+func (ui *IMUI) setKeyMapping() {
+	keys := map[int]int{
+		imgui.KeyTab:        sdl.SCANCODE_TAB,
+		imgui.KeyLeftArrow:  sdl.SCANCODE_LEFT,
+		imgui.KeyRightArrow: sdl.SCANCODE_RIGHT,
+		imgui.KeyUpArrow:    sdl.SCANCODE_UP,
+		imgui.KeyDownArrow:  sdl.SCANCODE_DOWN,
+		imgui.KeyPageUp:     sdl.SCANCODE_PAGEUP,
+		imgui.KeyPageDown:   sdl.SCANCODE_PAGEDOWN,
+		imgui.KeyHome:       sdl.SCANCODE_HOME,
+		imgui.KeyEnd:        sdl.SCANCODE_END,
+		imgui.KeyInsert:     sdl.SCANCODE_INSERT,
+		imgui.KeyDelete:     sdl.SCANCODE_DELETE,
+		imgui.KeyBackspace:  sdl.SCANCODE_BACKSPACE,
+		imgui.KeySpace:      sdl.SCANCODE_BACKSPACE,
+		imgui.KeyEnter:      sdl.SCANCODE_RETURN,
+		imgui.KeyEscape:     sdl.SCANCODE_ESCAPE,
+		imgui.KeyA:          sdl.SCANCODE_A,
+		imgui.KeyC:          sdl.SCANCODE_C,
+		imgui.KeyV:          sdl.SCANCODE_V,
+		imgui.KeyX:          sdl.SCANCODE_X,
+		imgui.KeyY:          sdl.SCANCODE_Y,
+		imgui.KeyZ:          sdl.SCANCODE_Z,
+	}
+
+	// Keyboard mapping. ImGui will use those indices to peek into the io.KeysDown[] array.
+	for imguiKey, nativeKey := range keys {
+		ui.imguiIO.KeyMap(imguiKey, nativeKey)
+	}
+}
+
+func (ui *IMUI) ProcessEvent(event sdl.Event) {
+	switch event.GetType() {
+	case sdl.MOUSEWHEEL:
+		wheelEvent := event.(*sdl.MouseWheelEvent)
+		var deltaX, deltaY float32
+		if wheelEvent.X > 0 {
+			deltaX++
+		} else if wheelEvent.X < 0 {
+			deltaX--
+		}
+		if wheelEvent.Y > 0 {
+			deltaY++
+		} else if wheelEvent.Y < 0 {
+			deltaY--
+		}
+		ui.imguiIO.AddMouseWheelDelta(deltaX, deltaY)
+	case sdl.MOUSEBUTTONDOWN:
+		buttonEvent := event.(*sdl.MouseButtonEvent)
+		switch buttonEvent.Button {
+		case sdl.BUTTON_LEFT:
+			ui.buttonsDown[mouseButtonPrimary] = true
+		case sdl.BUTTON_RIGHT:
+			ui.buttonsDown[mouseButtonSecondary] = true
+		case sdl.BUTTON_MIDDLE:
+			ui.buttonsDown[mouseButtonTertiary] = true
+		}
+	case sdl.TEXTINPUT:
+		inputEvent := event.(*sdl.TextInputEvent)
+		ui.imguiIO.AddInputCharacters(string(inputEvent.Text[:]))
+	case sdl.KEYDOWN:
+		keyEvent := event.(*sdl.KeyboardEvent)
+		ui.imguiIO.KeyPress(int(keyEvent.Keysym.Scancode))
+		ui.updateKeyModifier()
+	case sdl.KEYUP:
+		keyEvent := event.(*sdl.KeyboardEvent)
+		ui.imguiIO.KeyRelease(int(keyEvent.Keysym.Scancode))
+		ui.updateKeyModifier()
+	}
+}
+
+func (ui *IMUI) updateKeyModifier() {
+	modState := sdl.GetModState()
+	mapModifier := func(lMask sdl.Keymod, lKey int, rMask sdl.Keymod, rKey int) (lResult int, rResult int) {
+		if (modState & lMask) != 0 {
+			lResult = lKey
+		}
+		if (modState & rMask) != 0 {
+			rResult = rKey
+		}
+		return
+	}
+	ui.imguiIO.KeyShift(mapModifier(sdl.KMOD_LSHIFT, sdl.SCANCODE_LSHIFT, sdl.KMOD_RSHIFT, sdl.SCANCODE_RSHIFT))
+	ui.imguiIO.KeyCtrl(mapModifier(sdl.KMOD_LCTRL, sdl.SCANCODE_LCTRL, sdl.KMOD_RCTRL, sdl.SCANCODE_RCTRL))
+	ui.imguiIO.KeyAlt(mapModifier(sdl.KMOD_LALT, sdl.SCANCODE_LALT, sdl.KMOD_RALT, sdl.SCANCODE_RALT))
+}
+
+// Text returns the current clipboard text, if available.
+func (ui *IMUI) Text() (string, error) {
+	return sdl.GetClipboardText()
+}
+
+// SetText sets the text as the current clipboard text.
+func (ui *IMUI) SetText(text string) {
+	_ = sdl.SetClipboardText(text)
+}
+
 // Render translates the ImGui draw data to OpenGL commands.
 func (ui *IMUI) Render() {
 	// Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
 	displayWidth, displayHeight := ui.window.GetSize()
-	fbWidth, fbHeight := ui.window.GetFramebufferSize()
+	fbWidth, fbHeight := ui.window.GLGetDrawableSize()
 	if (fbWidth <= 0) || (fbHeight <= 0) {
 		return
 	}
@@ -385,28 +391,6 @@ func (ui *IMUI) createDeviceObjects() {
 	gl.BindVertexArray(uint32(lastVertexArray))
 }
 
-func (ui *IMUI) createFontsTexture() {
-	// Build texture atlas
-	image := ui.imguiIO.Fonts().TextureDataAlpha8()
-
-	// Upload texture to graphics system
-	var lastTexture int32
-	gl.GetIntegerv(gl.TEXTURE_BINDING_2D, &lastTexture)
-	gl.GenTextures(1, &ui.fontTexture)
-	gl.BindTexture(gl.TEXTURE_2D, ui.fontTexture)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-	gl.PixelStorei(gl.UNPACK_ROW_LENGTH, 0)
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RED, int32(image.Width), int32(image.Height),
-		0, gl.RED, gl.UNSIGNED_BYTE, image.Pixels)
-
-	// Store our identifier
-	ui.imguiIO.Fonts().SetTextureID(imgui.TextureID(ui.fontTexture))
-
-	// Restore state
-	gl.BindTexture(gl.TEXTURE_2D, uint32(lastTexture))
-}
-
 func (ui *IMUI) invalidateDeviceObjects() {
 	if ui.vboHandle != 0 {
 		gl.DeleteBuffers(1, &ui.vboHandle)
@@ -443,4 +427,26 @@ func (ui *IMUI) invalidateDeviceObjects() {
 		ui.imguiIO.Fonts().SetTextureID(0)
 		ui.fontTexture = 0
 	}
+}
+
+func (ui *IMUI) createFontsTexture() {
+	// Build texture atlas
+	image := ui.imguiIO.Fonts().TextureDataAlpha8()
+
+	// Upload texture to graphics system
+	var lastTexture int32
+	gl.GetIntegerv(gl.TEXTURE_BINDING_2D, &lastTexture)
+	gl.GenTextures(1, &ui.fontTexture)
+	gl.BindTexture(gl.TEXTURE_2D, ui.fontTexture)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+	gl.PixelStorei(gl.UNPACK_ROW_LENGTH, 0)
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RED, int32(image.Width), int32(image.Height),
+		0, gl.RED, gl.UNSIGNED_BYTE, image.Pixels)
+
+	// Store our identifier
+	ui.imguiIO.Fonts().SetTextureID(imgui.TextureID(ui.fontTexture))
+
+	// Restore state
+	gl.BindTexture(gl.TEXTURE_2D, uint32(lastTexture))
 }
