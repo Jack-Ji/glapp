@@ -28,7 +28,7 @@ func main() {
 		minorVersion = 6
 	)
 
-	window, err := initOpenglContext(
+	window, err := InitOpenglContext(
 		"glapp",
 		[]int{windowWidth, windowHeight},
 		[]int{majorVersion, minorVersion})
@@ -43,7 +43,17 @@ func main() {
 	log.Printf("OpenGL Version: %s", version)
 
 	// Configure the vertex and fragment shaders
-	program, err := loadShader(vertexShader, fragmentShader)
+	program, err := LoadShaders(
+		[]Shader{
+			{
+				Source: vertexShader,
+				Type:   gl.VERTEX_SHADER,
+			},
+			{
+				Source: fragmentShader,
+				Type:   gl.FRAGMENT_SHADER,
+			},
+		})
 	if err != nil {
 		panic(err)
 	}
@@ -67,7 +77,7 @@ func main() {
 	gl.BindFragDataLocation(program, 0, gl.Str("outputColor\x00"))
 
 	// Load the texture
-	texture, err := loadTexture("square.png")
+	texture, err := LoadTexture("square.png")
 	if err != nil {
 		log.Fatalln(err)
 	}

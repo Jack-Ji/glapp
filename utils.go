@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/draw"
@@ -11,8 +12,12 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
+var (
+	glExtensions = map[string]bool{}
+)
+
 // Initialize window and opengl context
-func initOpenglContext(title string, size, version []int) (*sdl.Window, error) {
+func InitOpenglContext(title string, size, version []int) (*sdl.Window, error) {
 	if err := sdl.Init(sdl.INIT_EVERYTHING); err != nil {
 		return nil, err
 	}
@@ -54,24 +59,45 @@ func initOpenglContext(title string, size, version []int) (*sdl.Window, error) {
 		return nil, err
 	}
 
+	glVersion := gl.GoStr(gl.GetString(gl.VERSION))
+	fmt.Printf("OpenGL Version: %s\n", glVersion)
+
+	var extNum int32
+	gl.GetIntegerv(gl.NUM_EXTENSIONS, &extNum)
+	fmt.Printf("OpenGL Extensions: %d\n", extNum)
+	for i := int32(0); i < extNum; i++ {
+		extName := gl.GoStr(gl.GetStringi(gl.EXTENSIONS, uint32(i)))
+		glExtensions[extName] = true
+		fmt.Printf("\t%s\n", extName)
+	}
+
 	return window, nil
 }
 
-func loadShader(vertexShaderSource, fragmentShaderSource string) (uint32, error) {
-	vertexShader, err := compileShader(vertexShaderSource, gl.VERTEX_SHADER)
-	if err != nil {
-		return 0, err
+type Shader struct {
+	Source string
+	Type   uint32
+	id     uint32
+}
+
+func LoadShaders(ss []Shader) (uint32, error) {
+	if len(ss) < 2 {
+		return 0, errors.New("at least vertex and fragment shaders are needed")
 	}
 
-	fragmentShader, err := compileShader(fragmentShaderSource, gl.FRAGMENT_SHADER)
-	if err != nil {
-		return 0, err
+	for i := range ss {
+		shaderID, err := compileShader(ss[i].Source, ss[i].Type)
+		if err != nil {
+			return 0, err
+		}
+		ss[i].id = shaderID
+		defer gl.DeleteShader(shaderID)
 	}
 
 	program := gl.CreateProgram()
-
-	gl.AttachShader(program, vertexShader)
-	gl.AttachShader(program, fragmentShader)
+	for _, v := range ss {
+		gl.AttachShader(program, v.id)
+	}
 	gl.LinkProgram(program)
 
 	var status int32
@@ -85,9 +111,6 @@ func loadShader(vertexShaderSource, fragmentShaderSource string) (uint32, error)
 
 		return 0, fmt.Errorf("failed to link program: %v", log)
 	}
-
-	gl.DeleteShader(vertexShader)
-	gl.DeleteShader(fragmentShader)
 
 	return program, nil
 }
@@ -115,7 +138,7 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 	return shader, nil
 }
 
-func loadTexture(file string) (uint32, error) {
+func LoadTexture(file string) (uint32, error) {
 	imgFile, err := os.Open(file)
 	if err != nil {
 		return 0, fmt.Errorf("texture %q not found on disk: %v", file, err)
