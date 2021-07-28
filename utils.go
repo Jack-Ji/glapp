@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/draw"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/go-gl/gl/v4.5-core/gl"
@@ -17,7 +18,8 @@ var (
 )
 
 // Initialize window and opengl context
-func InitOpenglContext(title string, size, version []int) (*sdl.Window, error) {
+func InitOpenglContext(title string, size, versions []int) (*sdl.Window, error) {
+	runtime.LockOSThread()
 	if err := sdl.Init(sdl.INIT_EVERYTHING); err != nil {
 		return nil, err
 	}
@@ -42,8 +44,8 @@ func InitOpenglContext(title string, size, version []int) (*sdl.Window, error) {
 	if err != nil {
 		return nil, err
 	}
-	sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, version[0])
-	sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, version[1])
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, versions[0])
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, versions[1])
 	sdl.GLSetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, sdl.GL_CONTEXT_PROFILE_CORE)
 	_, err = window.GLCreateContext()
 	if err != nil {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	_ "image/png"
 	"log"
-	"runtime"
 
 	"glapp/iu"
 	"glapp/iu/demo"
@@ -15,17 +14,12 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-func init() {
-	// GUI event handling must run on the main OS thread
-	runtime.LockOSThread()
-}
-
 func main() {
 	const (
 		windowWidth  = 1280
 		windowHeight = 800
 		majorVersion = 4
-		minorVersion = 6
+		minorVersion = 5
 	)
 
 	window, err := InitOpenglContext(
