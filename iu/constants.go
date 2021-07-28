@@ -1,4 +1,4 @@
-package imui
+package iu
 
 const (
 	mouseButtonPrimary   = 0

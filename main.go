@@ -6,10 +6,10 @@ import (
 	"log"
 	"runtime"
 
-	"glapp/imui"
-	"glapp/imui/demo"
+	"glapp/iu"
+	"glapp/iu/demo"
 
-	"github.com/go-gl/gl/v4.6-core/gl"
+	"github.com/go-gl/gl/v4.5-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/inkyblackness/imgui-go/v4"
 	"github.com/veandco/go-sdl2/sdl"
@@ -35,6 +35,9 @@ func main() {
 	if err != nil {
 		log.Fatal("Initialize OpenGL context failed:", err)
 	}
+
+	iuContext := iu.NewContext(window, nil, true)
+	defer iuContext.Dispose()
 
 	version := gl.GoStr(gl.GetString(gl.VERSION))
 	log.Printf("OpenGL Version: %s", version)
@@ -93,7 +96,6 @@ func main() {
 	gl.ClearColor(1.0, 1.0, 1.0, 1.0)
 
 	var (
-		ui                = imui.NewIMUI(window, nil)
 		previousTime      = sdl.GetTicks()
 		running           = true
 		angle             = 0.0
@@ -108,7 +110,7 @@ func main() {
 	for running {
 	EVENT_LOOP:
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
-			ui.ProcessEvent(event)
+			iuContext.ProcessEvent(event)
 
 			switch event.(type) {
 			case *sdl.QuitEvent:
@@ -140,7 +142,7 @@ func main() {
 
 		// ui rendering
 		{
-			ui.NewFrame()
+			iuContext.NewFrame()
 
 			// 1. Show a simple window.
 			// Tip: if we don't call imgui.Begin()/imgui.End() the widgets automatically appears in a window called "Debug".
@@ -190,7 +192,7 @@ func main() {
 				demo.Show(&showGoDemoWindow)
 			}
 
-			ui.Render()
+			iuContext.Render()
 		}
 
 		// Maintenance

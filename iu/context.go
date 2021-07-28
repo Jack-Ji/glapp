@@ -1,9 +1,9 @@
-package imui
+package iu
 
 import (
 	_ "embed"
 
-	"github.com/go-gl/gl/v4.6-core/gl"
+	"github.com/go-gl/gl/v4.5-core/gl"
 	"github.com/inkyblackness/imgui-go/v4"
 	"github.com/veandco/go-sdl2/sdl"
 )
@@ -14,15 +14,13 @@ var unversionedVertexShader string
 //go:embed gl-shader/main.frag
 var unversionedFragmentShader string
 
-// IMUI implements a ui based on sdl/imgui
-type IMUI struct {
-	context *imgui.Context
-	imguiIO imgui.IO
-
-	window      *sdl.Window
-	time        uint64
-	buttonsDown [mouseButtonCount]bool
-
+// Immediate ui context
+type Context struct {
+	context                *imgui.Context
+	imguiIO                imgui.IO
+	window                 *sdl.Window
+	time                   uint64
+	buttonsDown            [mouseButtonCount]bool
 	glslVersion            string
 	fontTexture            uint32
 	shaderHandle           uint32
@@ -37,16 +35,20 @@ type IMUI struct {
 	elementsHandle         uint32
 }
 
-// NewIMUI attempts to initialize a IMUI context.
-func NewIMUI(window *sdl.Window, font *imgui.FontAtlas) *IMUI {
-	ui := &IMUI{
+// Initialize ui context.
+func NewContext(window *sdl.Window, font *imgui.FontAtlas, saveLayout bool) *Context {
+	ui := &Context{
 		context:     imgui.CreateContext(font),
 		window:      window,
 		glslVersion: "#version 150",
 	}
 	ui.imguiIO = imgui.CurrentIO()
 	ui.imguiIO.SetClipboard(ui)
-	ui.imguiIO.SetIniFilename("")
+	if saveLayout {
+		ui.imguiIO.SetIniFilename("iu.ini")
+	} else {
+		ui.imguiIO.SetIniFilename("")
+	}
 
 	ui.setKeyMapping()
 	ui.createDeviceObjects()
@@ -54,12 +56,12 @@ func NewIMUI(window *sdl.Window, font *imgui.FontAtlas) *IMUI {
 }
 
 // Dispose cleans up the resources.
-func (ui *IMUI) Dispose() {
+func (ui *Context) Dispose() {
 	ui.invalidateDeviceObjects()
 }
 
 // NewFrame marks the begin of a render pass. It forwards all current state to imgui.CurrentIO().
-func (ui *IMUI) NewFrame() {
+func (ui *Context) NewFrame() {
 	// Setup display size (every frame to accommodate for window resizing)
 	displayWidth, displayHeight := ui.window.GetSize()
 	ui.imguiIO.SetDisplaySize(imgui.Vec2{X: float32(displayWidth), Y: float32(displayHeight)})
@@ -86,7 +88,7 @@ func (ui *IMUI) NewFrame() {
 	imgui.NewFrame()
 }
 
-func (ui *IMUI) setKeyMapping() {
+func (ui *Context) setKeyMapping() {
 	keys := map[int]int{
 		imgui.KeyTab:        sdl.SCANCODE_TAB,
 		imgui.KeyLeftArrow:  sdl.SCANCODE_LEFT,
@@ -117,7 +119,7 @@ func (ui *IMUI) setKeyMapping() {
 	}
 }
 
-func (ui *IMUI) ProcessEvent(event sdl.Event) {
+func (ui *Context) ProcessEvent(event sdl.Event) {
 	switch event.GetType() {
 	case sdl.MOUSEWHEEL:
 		wheelEvent := event.(*sdl.MouseWheelEvent)
@@ -157,7 +159,7 @@ func (ui *IMUI) ProcessEvent(event sdl.Event) {
 	}
 }
 
-func (ui *IMUI) updateKeyModifier() {
+func (ui *Context) updateKeyModifier() {
 	modState := sdl.GetModState()
 	mapModifier := func(lMask sdl.Keymod, lKey int, rMask sdl.Keymod, rKey int) (lResult int, rResult int) {
 		if (modState & lMask) != 0 {
@@ -174,17 +176,17 @@ func (ui *IMUI) updateKeyModifier() {
 }
 
 // Text returns the current clipboard text, if available.
-func (ui *IMUI) Text() (string, error) {
+func (ui *Context) Text() (string, error) {
 	return sdl.GetClipboardText()
 }
 
 // SetText sets the text as the current clipboard text.
-func (ui *IMUI) SetText(text string) {
+func (ui *Context) SetText(text string) {
 	_ = sdl.SetClipboardText(text)
 }
 
 // Render translates the ImGui draw data to OpenGL commands.
-func (ui *IMUI) Render() {
+func (ui *Context) Render() {
 	// Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
 	displayWidth, displayHeight := ui.window.GetSize()
 	fbWidth, fbHeight := ui.window.GLGetDrawableSize()
@@ -344,7 +346,7 @@ func (ui *IMUI) Render() {
 	gl.Scissor(lastScissorBox[0], lastScissorBox[1], lastScissorBox[2], lastScissorBox[3])
 }
 
-func (ui *IMUI) createDeviceObjects() {
+func (ui *Context) createDeviceObjects() {
 	// Backup GL state
 	var lastTexture int32
 	var lastArrayBuffer int32
@@ -392,7 +394,7 @@ func (ui *IMUI) createDeviceObjects() {
 	gl.BindVertexArray(uint32(lastVertexArray))
 }
 
-func (ui *IMUI) invalidateDeviceObjects() {
+func (ui *Context) invalidateDeviceObjects() {
 	if ui.vboHandle != 0 {
 		gl.DeleteBuffers(1, &ui.vboHandle)
 	}
@@ -430,7 +432,7 @@ func (ui *IMUI) invalidateDeviceObjects() {
 	}
 }
 
-func (ui *IMUI) createFontsTexture() {
+func (ui *Context) createFontsTexture() {
 	// Build texture atlas
 	image := ui.imguiIO.Fonts().TextureDataAlpha8()
 
